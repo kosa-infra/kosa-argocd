@@ -1,0 +1,23 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: provisioner
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: provisioner
+  template:
+    metadata:
+      labels:
+        app: provisioner
+    spec:
+      containers:
+      - name: provisioner
+        image: docker.io/nervyniftypyramid/provisioner:latest
+        ports:
+        - containerPort: 80
+        envFrom:
+        - secretRef:
+            name: provisioner-env
+

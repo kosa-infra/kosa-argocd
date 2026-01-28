@@ -1,0 +1,23 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: provisioner-auth
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: provisioner-auth
+  template:
+    metadata:
+      labels:
+        app: provisioner-auth
+    spec:
+      containers:
+      - name: provisioner-auth
+        image: docker.io/nervyniftypyramid/provisioner-auth:latest
+        ports:
+        - containerPort: 80
+        envFrom:
+        - secretRef:
+            name: provisioner-env
+
