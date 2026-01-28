@@ -1,0 +1,166 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: provisioner-app
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/kosa-infra/kosa-argocd.git
+    targetRevision: HEAD
+    path: provisioner/
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: default
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: provisioner-auth
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: provisioner-auth
+  template:
+    metadata:
+      labels:
+        app: provisioner-auth
+    spec:
+      containers:
+      - name: provisioner-auth
+        image: docker.io/nervyniftypyramid/provisioner-auth:latest
+        ports:
+        - containerPort: 80
+        envFrom:
+        - secretRef:
+            name: provisioner-env
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: provisioner-auth
+spec:
+  selector:
+    app: provisioner-auth
+  ports:
+  - port: 80
+    targetPort: 80
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: provisioner
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: provisioner
+  template:
+    metadata:
+      labels:
+        app: provisioner
+    spec:
+      containers:
+      - name: provisioner
+        image: docker.io/nervyniftypyramid/provisioner:latest
+        ports:
+        - containerPort: 80
+        envFrom:
+        - secretRef:
+            name: provisioner-env
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: provisioner
+spec:
+  selector:
+    app: provisioner
+  ports:
+  - port: 80
+    targetPort: 80
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nginx-proxy
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: nginx-proxy
+  template:
+    metadata:
+      labels:
+        app: nginx-proxy
+    spec:
+      containers:
+      - name: nginx
+        image: nginx:alpine
+        ports:
+        - containerPort: 80
+        volumeMounts:
+        - name: nginx-conf
+          mountPath: /etc/nginx/conf.d/default.conf
+          subPath: default.conf
+      volumes:
+      - name: nginx-conf
+        configMap:
+          name: nginx-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: nginx-proxy
+spec:
+  selector:
+    app: nginx-proxy
+  type: LoadBalancer
+  ports:
+  - port: 80
+    targetPort: 80
+    nodePort: 30080
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: nginx-config
+data:
+  default.conf: |
+    server {
+        listen 80;
+        
+        location / {
+            proxy_pass http://provisioner-auth:80/auth/login;    # ← :80
+        }
+        
+        location /auth/login {
+            proxy_pass http://provisioner-auth:80/auth/login;   # ← :80
+        }
+        
+        location /dashboard {
+            proxy_pass http://provisioner:80/provision/dashboard/;
+        }
+        
+        location /static {
+            proxy_pass http://provisioner:80/static;
+        }
+        
+        location /provision/api {
+            proxy_pass http://provisioner:80/provision/api;
+        }
+        
+        location /api/get-redirect {
+            proxy_pass http://provisioner:80/provision/api/get-redirect;
+        }
+        
+        error_page 500 502 503 504 /50x.html;
+        location = /50x.html {
+            root /usr/share/nginx/html;
+        }
+    }
